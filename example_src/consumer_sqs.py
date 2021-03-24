@@ -3,6 +3,11 @@ import json
 import boto3
 import botocore
 #import pandas as pd
+import pandas as pd
+import wikipedia
+import boto3
+from io import StringIO
+
 
 #SETUP LOGGING
 import logging
@@ -21,11 +26,10 @@ REGION = "us-east-1"
 ### SQS Utils###
 def sqs_queue_resource(queue_name):
     """Returns an SQS queue resource connection
-
     Usage example:
     In [2]: queue = sqs_queue_resource("dev-job-24910")
     In [4]: queue.attributes
-    Out[4]: 
+    Out[4]:
     {'ApproximateNumberOfMessages': '0',
      'ApproximateNumberOfMessagesDelayed': '0',
      'ApproximateNumberOfMessagesNotVisible': '0',
@@ -37,7 +41,6 @@ def sqs_queue_resource(queue_name):
      'QueueArn': 'arn:aws:sqs:us-west-2:414930948375:dev-job-24910',
      'ReceiveMessageWaitTimeSeconds': '0',
      'VisibilityTimeout': '120'}
-
     """
 
     sqs_resource = boto3.resource('sqs', region_name=REGION)
@@ -60,7 +63,7 @@ def sqs_approximate_count(queue_name):
 
     queue = sqs_queue_resource(queue_name)
     attr = queue.attributes
-    num_message = int(attr['ApproximateNumberOfMessages']) 
+    num_message = int(attr['ApproximateNumberOfMessages'])
     num_message_not_visible = int(attr['ApproximateNumberOfMessagesNotVisible'])
     queue_value = sum([num_message, num_message_not_visible])
     sum_msg = """'ApproximateNumberOfMessages' and 'ApproximateNumberOfMessagesNotVisible' = *** [%s] *** for QUEUE NAME: [%s]""" %\
@@ -86,6 +89,51 @@ def delete_sqs_msg(queue_name, receipt_handle):
     LOG.info(delete_log_msg_resp)
     return response
 
+def names_to_wikipedia(names):
+
+    wikipedia_snippit = []
+    for name in names:
+        wikipedia_snippit.append(wikipedia.summary(name, sentences=1))
+    df = pd.DataFrame(
+        {
+            'names':names,
+            'wikipedia_snippit': wikipedia_snippit
+        }
+    )
+    
+    LOG.info('dataframe head - {}'.format(df.to_string()))
+    return df
+
+def extract_entity(row):
+    """Uses AWS Comprehend to Extract Entities on a DataFrame"""
+
+    LOG.info(f"Processing {row['wikipedia_snippit'].to_string()}")
+    comprehend_medical = boto3.client(service_name='comprehendmedical')
+    payload = comprehend_medical.detect_entities_v2(Text=row['wikipedia_snippit'].to_string())['Entities'][0]
+    LOG.debug(f"Found entitity: {payload}")
+    entity = payload['Category'] + ', ' + payload['Text']
+    return entity
+
+def apply_entity(df, column="wikipedia_snippit"):
+    """Uses Pandas Apply to Extract Entities"""
+    df['Entity'] = df[column].apply(extract_entity, axis=1)
+    return df
+
+### S3 ###
+
+def write_s3(df, bucket, name):
+    """Write S3 Bucket"""
+
+    #csv_buffer = StringIO()
+    #df.to_csv(csv_buffer)
+    s3_resource = boto3.resource('s3')
+    filename = f"{name}_entities.txt"
+    #res = s3_resource.Object(bucket, filename).\
+    #    put(Body=csv_buffer.getvalue())
+    s3_resource.Object(bucket, filename).put(Body=df)
+    LOG.info(f"result of write to bucket: {bucket} with:\n {df}")
+
+
 def lambda_handler(event, context):
     """Entry Point for Lambda"""
 
@@ -93,13 +141,33 @@ def lambda_handler(event, context):
     receipt_handle  = event['Records'][0]['receiptHandle'] #sqs message
     #'eventSourceARN': 'arn:aws:sqs:us-east-1:561744971673:producer'
     event_source_arn = event['Records'][0]['eventSourceARN']
+
+    names = [] #Captured from Queue
+
+    # Process Queue
     for record in event['Records']:
         body = json.loads(record['body'])
-        company_name = body['name']
-        extra_logging = {"body": body, "company_name":company_name}
+        disease_name = body['name']
+
+        #Capture for processing
+        names.append(disease_name)
+
+        extra_logging = {"body": body, "disease_name":disease_name}
         LOG.info(f"SQS CONSUMER LAMBDA, splitting sqs arn with value: {event_source_arn}",extra=extra_logging)
         qname = event_source_arn.split(":")[-1]
         extra_logging["queue"] = qname
         LOG.info(f"Attemping Deleting SQS receiptHandle {receipt_handle} with queue_name {qname}", extra=extra_logging)
         res = delete_sqs_msg(queue_name=qname, receipt_handle=receipt_handle)
         LOG.info(f"Deleted SQS receipt_handle {receipt_handle} with res {res}", extra=extra_logging)
+
+    # Make Pandas dataframe with wikipedia snippts
+    LOG.info(f"Creating dataframe with values: {names}")
+    df = names_to_wikipedia(names)
+
+    # Perform entity extraction
+    df = extract_entity(df)
+    LOG.info(f"Entities for diseases: {df}")
+
+    # Write result to S3
+    write_s3(df=df, bucket="medicalentitydata", name=names)
+    content="String content to write to a new S3 file"
