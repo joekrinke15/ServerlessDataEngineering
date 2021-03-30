@@ -3,6 +3,6 @@ A serverless medical NLP pipeline hosted on AWS. This project loads names of med
 # Pipeline Diagram
 ![Serverless Architecture](https://raw.githubusercontent.com/joekrinke15/ServerlessDataEngineering/master/AWSServerlessMedical.png)
 # Database Strucutre
-![Database Strucutre](https://raw.githubusercontent.com/joekrinke15/ServerlessDataEngineering/master/DynamoDB.PNG)
+![Database Structure](https://raw.githubusercontent.com/joekrinke15/ServerlessDataEngineering/master/DynamoDB.PNG)
 # Sample Output
 ![Sample Entity Output](https://raw.githubusercontent.com/joekrinke15/ServerlessDataEngineering/master/SampleEntity.PNG)
