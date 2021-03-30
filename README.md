@@ -5,5 +5,5 @@ A serverless medical NLP pipeline hosted on AWS. This project loads names of med
 # Database Strucutre
 ![Database Structure](https://raw.githubusercontent.com/joekrinke15/ServerlessDataEngineering/master/DynamoDB.PNG)
 # Sample Output
-![Sample Entity Output](https://raw.githubusercontent.com/joekrinke15/ServerlessDataEngineering/master/SampleEntity.PNG)
+![Sample Entity Output](https://raw.githubusercontent.com/joekrinke15/ServerlessDataEngineering/master/SampleEntity.PNG) 
  
